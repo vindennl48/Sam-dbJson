@@ -39,6 +39,16 @@ node
     packet.data = db.getTable('songs', ['scratch']);
     this.return(packet);
   })
+  .addApiCall('newSong', function(packet) {
+    packet.bdata = packet.data;
+    if (db.newRecord(packet.data.username, 'songs', { name: packet.data.name } )) {
+      packet.data = true;
+      this.return(packet);
+      return;
+    }
+    packet.data = false;
+    this.return(packet);
+  })
 
 
   // Testing our API calls
@@ -56,10 +66,17 @@ node
   .addReturnCall(nodeName, 'getScratchTracks', function(packet) {
     Helpers.log({leader: 'arrow', loud: false}, 'Song Data: ', packet.data);
   })
+  .addReturnCall(nodeName, 'newSong', function(packet) {
+    Helpers.log({leader: 'arrow', loud: false},
+      `New song '${packet.bdata.name}' successful?: `,
+      packet.data
+    );
+  })
 
   .run(function() {
     // API tests:
     // this.callApi(nodeName, 'getSongList');
     // this.callApi(nodeName, 'getSongData', { id: 1, columns: ['all'], numEntries: 'all' });
-    this.callApi(nodeName, 'getScratchTracks');
+    // this.callApi(nodeName, 'getScratchTracks');
+    // this.callApi(nodeName, 'newSong', { name: 'BigSkyBlue', username: 'mitch' });
   });
