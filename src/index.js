@@ -2,7 +2,7 @@ const { Model }    = require('./model.js');
 const { Client }   = require('../../samcore/src/Client.js');
 const { Helpers }  = require('../../samcore/src/Helpers.js');
 
-let db         = new Model('databaseFile.json');
+let db         = new Model('localdb.json', 'remotedb.json');
 let nodeName   = 'dbjson';
 let serverName = 'samcore';
 let node       = new Client(nodeName, serverName/*, false*/);

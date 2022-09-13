@@ -3,16 +3,12 @@ const editJsonFile = require('edit-json-file');
 const {callbackify} = require('util');
 
 class Model {
-  constructor(fileName='databaseFile.json') {
-    const runDirectory = process.cwd();
-    const databaseFile = fileName;
-    const filePath     = `${runDirectory}/${databaseFile}`
-    this.file          = editJsonFile(filePath, {autosave: true});
+  constructor(localFile='localdb.json', remoteFile='remotedb.json') {
+    this.localdb   = editJsonFile(`${process.cwd()}/${localFile}`, {autosave: true});
+    this.remotedb  = editJsonFile(`${process.cwd()}/${remoteFile}`, {autosave: true});
 
-    if (!Object.keys(this.file.get()).length) {
-      this.file.set(`database.songs.name`, [
-        { id: 0, name: 'Sono', editedBy: 'mitch', timestamp: 0 }
-      ]);
+    if (!Object.keys(this.localdb.get()).length) {
+      this.localdb.set(`database`, {});
     } 
 
     // This is for the timestamp method. Makes sure that any new timestamp is
@@ -29,7 +25,7 @@ class Model {
   updateRecord(username, id, tableName, newValue) {
     if (!this._doesIdExist(tableName, id)) {
       Helpers.log({leader: 'error', loud: false}, 'ID does not exist');
-      return false; 
+      return -1; 
     }
     let keys = Object.keys(newValue);
 
@@ -45,7 +41,7 @@ class Model {
       updateRecord.editedBy  = username;
       updateRecord.timestamp = this._getTimestamp();
 
-      this.file.append(`database.${tableName}.${key}`, updateRecord);
+      this.localdb.append(`database.${tableName}.${key}`, updateRecord);
 
     });
 
@@ -61,7 +57,7 @@ class Model {
     */
   newRecord(username, tableName, newValue) {
     let newId = this._getNextId(tableName);
-    this.file.append(`database.${tableName}.id`, newId);
+    this.localdb.append(`database.${tableName}.id`, newId);
     this.updateRecord(username, newId, tableName, newValue);
     return true;
   }
@@ -79,27 +75,30 @@ class Model {
     *  records, or specify a number of records to return.
     */
   getRecord(tableName, id, columns, numEntries=1) {
-    let table = this.file.get(`database.${tableName}`);
-    let result = {};
-
-    let keys = [];
-    if (columns[0] == 'all') {
-      keys = Object.keys(table);
-    } else {
-      keys = columns;
-    }
-
-    keys.forEach(key => { if (key != 'id') {
-      let entries = this._getNEntries(table[key], id, numEntries);
-      // Helpers.log({leader: 'arrow', loud: false}, 'entries: ', entries);
-      if (entries !== undefined) { result[key] = entries; }
-    }});
-
-    return result;
+    let table = this.getTable(tableName, columns, numEntries);
+    if (table == -1) { return -1; }
+    return table.filter(a => { return a.id === id; });
   }
 
+  /**
+    * A little tricky here.  This gets a table with N number of entries per id.
+    * In this database, each id will have multiple entires with different
+    * timestamps to be able to provide backtracing/history.  We will be able to
+    * record changes over time.  Because of this, the numEntries argument is the
+    * number of changes per id you would like included in the request.
+    *
+    * @param {string} tableName - Name of table
+    * @param {array} columns
+    *  array of strings of requested columns.  If 'all' is listed as the only
+    *  option, will return all columns available.
+    * @param {integer} numEntries
+    *  num of history entries to return.  Can either be 0 or 'all' for all
+    *  records, or specify a number of records to return.
+    */
   getTable(tableName, columns, numEntries=1) {
-    let idList = this.file.get(`database.${tableName}.id`);
+    let idList = this._getIdList(tableName);
+    if (idList == -1) { return -1; }
+
     let result = [];
 
     idList.forEach(id => {
@@ -135,7 +134,7 @@ class Model {
       return filteredList.slice(0, numEntries);
     } else {
       Helpers.log({leader: 'error', loud: false}, 'Model._getNEntries: Num Entries were incorrect.');
-      return false;
+      return -1;
     }
   }
 
@@ -146,17 +145,38 @@ class Model {
     * @param {integer} id - id to check
     */
   _doesIdExist(tableName, id) {
-    return this.file.get(`database.${tableName}.id`).includes(id);
+    let idList = this._getIdList(tableName);
+    if (idList == -1) { return false; }
+    return idList.includes(id);
   }
 
   /**
-    * Gets next new id for specific table
+    * Gets next new id for specific table.
+    * References remotedb table.
+    *
+    * TODO: Need a catch if it creates an ID that was uploaded already.
     *
     * @param {string} tableName - name of table to check
     */
   _getNextId(tableName) {
-    let idList = this.file.get(`database.${tableName}.id`).sort((a,b)=>b-a);
+    let idList = this._getIdList(tableName);
+    if (idList == -1) { return -1; }
     return idList[0]+1;
+  }
+
+  _getIdList(tableName) {
+    let idList = [];
+
+    if (!tableName in Object.keys(this.remotedb.get())) {
+      idList = idList.concat(this.remotedb.get(`database.${tableName}.id`));
+    }
+    if (!tableName in Object.keys(this.localdb.get())) {
+      idList = idList.concat(this.localdb.get(`database.${tableName}.id`));
+    }
+
+    if (idList.length == 0) { return -1; }
+
+    return idList.sort((a,b)=>b-a);
   }
 
   /**
