@@ -1,6 +1,6 @@
-const { Model }    = require('./model.js');
-const { Client }   = require('../../samcore/src/Client.js');
-const { Helpers }  = require('../../samcore/src/Helpers.js');
+const { Model }   = require('./model.js');
+const { Client }  = require('../../samcore/src/Client.js');
+const { Helpers } = require('../../samcore/src/Helpers.js');
 
 let db         = new Model('localdb.json', 'remotedb.json');
 let nodeName   = 'dbjson';
@@ -12,7 +12,9 @@ node
     * Returns all songs in the system
     */
   .addApiCall('getSongList', function(packet) {
-    packet.data = db.getTable('songs', ['name']);
+    let numEntries = 1;
+    if ('numEntries' in packet.data) { numEntries = packet.data.numEntries; }
+    packet.data = db.getTable('songs', ['name'], numEntries);
     this.return(packet);
   })
   /**
@@ -21,7 +23,7 @@ node
   .addApiCall('getSongData', function(packet) {
     packet.bdata = packet.data; // make a backup of the call
 
-    if (!('numEntries' in packet.data)) { packet.data.numEntries = 1; }
+    if ( !('numEntries' in packet.data) ) { packet.data.numEntries = 1; }
 
     packet.data = db.getRecord(
       'songs',
@@ -53,12 +55,9 @@ node
 
   // Testing our API calls
   .addReturnCall(nodeName, 'getSongList', function(packet) {
-    packet.data.forEach(song => {
-      Helpers.log({leader: 'arrow', loud: false},
-        'id: ', song.name.id, ', name: ', song.name.name,
-        ', object: ', song
-      );
-    });
+    for (let i = 0; i < packet.data.length; i++) {
+      Helpers.log({leader: 'arrow', loud: false}, 'songs: ', packet.data[i]);
+    }
   })
   .addReturnCall(nodeName, 'getSongData', function(packet) {
     Helpers.log({leader: 'arrow', loud: false}, 'Song Data: ', packet.data);
@@ -75,8 +74,8 @@ node
 
   .run(function() {
     // API tests:
-    // this.callApi(nodeName, 'getSongList');
+    // this.callApi(nodeName, 'getSongList', { numEntries: 'all' });
     // this.callApi(nodeName, 'getSongData', { id: 1, columns: ['all'], numEntries: 'all' });
     // this.callApi(nodeName, 'getScratchTracks');
-    // this.callApi(nodeName, 'newSong', { name: 'BigSkyBlue', username: 'mitch' });
+    // this.callApi(nodeName, 'newSong', { name: 'Bozo', username: 'mitch' });
   });

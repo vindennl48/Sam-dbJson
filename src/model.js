@@ -1,13 +1,13 @@
-const { Helpers }  = require('../../samcore/src/Helpers.js');
-const editJsonFile = require('edit-json-file');
-const {callbackify} = require('util');
+const { Helpers }   = require('../../samcore/src/Helpers.js');
+const editJsonFile  = require('edit-json-file');
+const merge         = require('deepmerge');
 
 class Model {
   constructor(localFile='localdb.json', remoteFile='remotedb.json') {
     this.localdb   = editJsonFile(`${process.cwd()}/${localFile}`, {autosave: true});
     this.remotedb  = editJsonFile(`${process.cwd()}/${remoteFile}`, {autosave: true});
 
-    if (!Object.keys(this.localdb.get()).length) {
+    if ( !(Object.keys(this.localdb.get()).length) ) {
       this.localdb.set(`database`, {});
     } 
 
@@ -23,14 +23,14 @@ class Model {
     * @param {object} newValue - the key is the column to update
     */
   updateRecord(username, id, tableName, newValue) {
-    if (!this._doesIdExist(tableName, id)) {
+    if ( !(this._doesIdExist(tableName, id)) ) {
       Helpers.log({leader: 'error', loud: false}, 'ID does not exist');
       return -1; 
     }
     let keys = Object.keys(newValue);
 
     keys.forEach(key => {
-      let updateRecord       = { id: id };
+      let updateRecord = { id: id };
       if ( newValue[key] === Object(newValue[key]) ) {
         let bKeys = Object.keys(newValue[key]);
         bKeys.forEach(bkey => { updateRecord[bkey] = newValue[key][bkey]; });
@@ -57,6 +57,7 @@ class Model {
     */
   newRecord(username, tableName, newValue) {
     let newId = this._getNextId(tableName);
+    if (newId == -1) { newId = 0; }
     this.localdb.append(`database.${tableName}.id`, newId);
     this.updateRecord(username, newId, tableName, newValue);
     return true;
@@ -75,9 +76,23 @@ class Model {
     *  records, or specify a number of records to return.
     */
   getRecord(tableName, id, columns, numEntries=1) {
-    let table = this.getTable(tableName, columns, numEntries);
-    if (table == -1) { return -1; }
-    return table.filter(a => { return a.id === id; });
+    let table = this.localdb.get(`database.${tableName}`);
+    table = merge(table, this.remotedb.get(`database.${tableName}`));
+    let result = {};
+
+    let keys = [];
+    if (columns[0] == 'all') {
+      keys = Object.keys(table);
+    } else {
+      keys = columns;
+    }
+
+    keys.forEach(key => { if (key != 'id') {
+      let entries = this._getNEntries(table[key], id, numEntries);
+      if (entries !== undefined) { result[key] = entries; }
+    }});
+
+    return result;
   }
 
   /**
@@ -146,6 +161,7 @@ class Model {
     */
   _doesIdExist(tableName, id) {
     let idList = this._getIdList(tableName);
+    Helpers.log({leader: 'arrow', loud: false}, 'idList: ', idList);
     if (idList == -1) { return false; }
     return idList.includes(id);
   }
@@ -167,10 +183,10 @@ class Model {
   _getIdList(tableName) {
     let idList = [];
 
-    if (!tableName in Object.keys(this.remotedb.get())) {
+    if ( !(tableName in Object.keys(this.remotedb.get('database'))) ) {
       idList = idList.concat(this.remotedb.get(`database.${tableName}.id`));
     }
-    if (!tableName in Object.keys(this.localdb.get())) {
+    if ( !(tableName in Object.keys(this.localdb.get('database'))) ) {
       idList = idList.concat(this.localdb.get(`database.${tableName}.id`));
     }
 
