@@ -4,8 +4,9 @@ const merge         = require('deepmerge');
 
 class Model {
   constructor(localFile='localdb.json', remoteFile='remotedb.json') {
-    this.localdb   = editJsonFile(`${process.cwd()}/${localFile}`, {autosave: true});
-    this.remotedb  = editJsonFile(`${process.cwd()}/${remoteFile}`, {autosave: true});
+    this.localdb  = editJsonFile(`${process.cwd()}/${localFile}`, {autosave: true});
+    this.remotedb = editJsonFile(`${process.cwd()}/${remoteFile}`, {autosave: true});
+    this.username = null; // set from SamCore
 
     if ( !(Object.keys(this.localdb.get()).length) ) {
       this.localdb.set(`database`, {});
@@ -16,6 +17,91 @@ class Model {
     this.lastTimestamp = 0;
   }
 
+  getSongs() {
+    let idList = [];
+
+    if ('songs' in this.remotedb.get('database')) {
+      idList = idList.concat(Object.keys(
+        this.remotedb.get(`database.songs`)
+      ));
+    }
+    if ('songs' in this.localdb.get('database')) {
+      idList = idList.concat(Object.keys(
+        this.localdb.get(`database.songs`)
+      ));
+    }
+
+    return idList;
+  }
+
+  getSong(songName) {
+    let song = [];
+
+    if ('songs' in this.remotedb.get('database') &&
+        songName in this.remotedb.get('database.songs')) {
+      song = song.concat(
+        this.remotedb.get(`database.songs.${songName}`)
+      );
+    }
+    if ('songs' in this.localdb.get('database') &&
+        songName in this.localdb.get('database.songs')) {
+      song = song.concat(
+        this.localdb.get(`database.songs.${songName}`)
+      );
+    }
+
+    return song.sort((a,b)=>b.timestamp-a.timestamp);
+  }
+
+  getSongAttr(songName, attr) {
+    return this.getSong(songName)
+      .filter(a => {
+        return a.attr === attr;
+      });
+  }
+
+  updateSong(songName, attr, value) {
+    let update = {
+      attr: attr,
+      value: value,
+      editedBy: this.username,
+      timestamp: this._getTimestamp()
+    }
+
+    // if song already exists
+    if ('songs' in this.localdb.get('database') &&
+        songName in this.localdb.get('database.songs')) {
+
+      this.localdb.append(`database.songs.${songName}`, update);
+    }
+    // if song doesnt exist
+    else {
+      if ( !('songs' in this.localdb.get('database')) ) {
+        this.localdb.set('database.songs', {});
+      }
+      if ( !(songName in this.localdb.get('database.songs')) ) {
+        this.localdb.set(`database.songs.${songName}`, [update]);
+      }
+    }
+    return true;
+  }
+
+  getUploadList() {
+    Object.entries(this.localdb.get('database')).forEach(([k1, v1]) => {
+        if (k1 == 'songs') {
+          Object.entries(v1).forEach(([songName, song]) => {
+            song.forEach(entry => {
+              if ('attr' in entry && entry.attr == 'mix') {
+                Helpers.log({leader: 'arrow', loud: false}, 'mix: ', entry.value);
+              }
+            });
+          });
+        }
+    });
+  }
+
+
+/*******************************************************************************/
   /**
     * @param {string} username - name of user updating record
     * @param {integer} id - id of record you want to change
@@ -123,6 +209,55 @@ class Model {
     });
 
     return result;
+  }
+
+  /**
+    * This function runs through the temp json and cloud json files, compares
+    * them, and then compiles a list of commands that need to be run by gdrive
+    * node to be able to merge the two json files together.
+    *
+    * @return {array} - list of commands for gdrive node to process
+    *
+    */
+  getUploadCommands() {
+    let ldb      = this.localdb.get('database');
+    let rdb      = this.remotedb.get('database');
+    let commands = [];
+
+    if ('songs' in Object.keys(ldb)) {
+
+      if ('id' in Object.keys(ldb.songs)) {
+        // check if keys exist in remote json file yet
+        if ('songs' in Object.keys(rdb) && 'id' in Object.keys(rdb.songs)) {
+          // if the keys do exist in remote json file, compare the two json files
+          ldb.songs.id.forEach(n => {
+            if ( !(n in rdb.songs.id) ) { // if id does not exist in remote
+              commands.push({/* add song id to list */});
+            }
+          });
+        } else {
+          ldb.songs.id.forEach(n => {
+            commands.push({/* add all song id's to list */});
+          });
+        }
+      }
+
+      if ('name' in Object.keys(ldb.songs)) {
+        if ('songs' in Object.keys(rdb) && 'name' in Object.keys(rdb.songs)) {
+          ldb.songs.name.forEach(n => {
+            rdb.songs.name.forEach(a => {
+              if ( !(n.id == a.id && n.name == a.name && n.editedBy == a.editedBy) ) {
+                commands.push({/* add song-name to list */});
+              }
+            });
+          });
+        } else {
+          ldb.songs.name.forEach(n => {
+            commands.push({/* add song-name to list */});
+          });
+        }
+      }
+    }
   }
 
   /**
