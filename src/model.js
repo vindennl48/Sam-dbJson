@@ -1,11 +1,25 @@
-const { Helpers }  = require('../../samcore/src/Helpers.js');
-const editJsonFile = require('edit-json-file');
-const merge        = require('deepmerge');
+const merge            = require('deepmerge');
+const { Helpers }      = require('../../samcore/src/Helpers.js');
+const { EditJsonFile } = require('../../samcore/src/EditJsonFile.js');
+
+// Example database:
+// {
+//   'database': {
+//     'songs': {
+//       'Petrichor': {
+//         'tags': [
+//           {'value': 'bass', 'editedBy': 'mitch', 'timestamp': 1230192343725},
+//           {'value': 'strings', 'editedBy': 'mitch', 'timestamp': 1230192343725}
+//         ]
+//       }
+//     }
+//   }
+// }
 
 class Model {
   constructor(localFile='localdb.json', remoteFile='remotedb.json') {
-    this.localdb  = editJsonFile(`${process.cwd()}/${localFile}`, {autosave: true});
-    this.remotedb = editJsonFile(`${process.cwd()}/${remoteFile}`, {autosave: true});
+    this.localdb  = new EditJsonFile(`${process.cwd()}/${localFile}`, {autosave: true});
+    this.remotedb = new EditJsonFile(`${process.cwd()}/${remoteFile}`, {autosave: true});
 
     if ( !(Object.keys(this.localdb.get()).length) ) {
       this.localdb.set(`database`, {});
@@ -22,73 +36,162 @@ class Model {
     this.lastTimestamp = 0;
   }
 
-  getSongs() {
-    let idList = [];
-
-    if ('songs' in this.remotedb.get('database')) {
-      idList = idList.concat(Object.keys(
-        this.remotedb.get(`database.songs`)
-      ));
-    }
-    if ('songs' in this.localdb.get('database')) {
-      idList = idList.concat(Object.keys(
-        this.localdb.get(`database.songs`)
-      ));
-    }
-
-    return idList;
-  }
-
-  getSong(songName) {
-    let song = [];
-
-    if ('songs' in this.remotedb.get('database') &&
-        songName in this.remotedb.get('database.songs')) {
-      song = song.concat(
-        this.remotedb.get(`database.songs.${songName}`)
-      );
-    }
-    if ('songs' in this.localdb.get('database') &&
-        songName in this.localdb.get('database.songs')) {
-      song = song.concat(
-        this.localdb.get(`database.songs.${songName}`)
-      );
-    }
-
-    return song.sort((a,b)=>b.timestamp-a.timestamp);
-  }
-
-  getSongAttr(songName, attr) {
-    return this.getSong(songName)
-      .filter(a => {
-        return a.attr === attr;
-      });
-  }
-
-  updateSong(songName, attr, value) {
-    let update = {
-      attr: attr,
-      value: value,
-      editedBy: this.username,
-      timestamp: this._getTimestamp()
-    }
-
-    // if song already exists
-    if ('songs' in this.localdb.get('database') &&
-        songName in this.localdb.get('database.songs')) {
-
-      this.localdb.append(`database.songs.${songName}`, update);
-    }
-    // if song doesnt exist
-    else {
-      if ( !('songs' in this.localdb.get('database')) ) {
-        this.localdb.set('database.songs', {});
-      }
-      if ( !(songName in this.localdb.get('database.songs')) ) {
-        this.localdb.set(`database.songs.${songName}`, [update]);
+  /**
+    * Add attribute to object in dbjson.
+    *
+    * @param {string|array} path
+    *   Path to get to desired data object in dbjson
+    * @param {any} value
+    *   Value of attribute. Can be anything.
+    */
+  addAttribute(path, value) {
+    if (this.username === 'default') {
+      return {
+        status: false,
+        errorMessage: 'Username is not set!'
       }
     }
-    return true;
+
+    if (typeof path === 'string') {
+      path = path.split('.');
+    }
+    if (path[0] !== 'database') {
+      path.unshift('database');
+    }
+
+    if (this.localdb.get(path) === 'undefined') {
+      this.localdb.set(path, []);
+    }
+
+    this.localdb.append(
+      path,
+      {
+        value:     value,
+        editedBy:  this.username,
+        timestamp: this._timestamp(),
+      }
+    );
+
+    return { status: true };
+  }
+
+  /**
+    * Get all attributes from an item
+    *
+    * @param {string|array} path
+    *   Path to get to desired data object in dbjson
+    *
+    * @return {object} Return object
+    */
+  getItem(path) {
+    if (this.username === 'default') {
+      return {
+        status: false,
+        errorMessage: 'Username is not set!'
+      }
+    }
+
+    if (typeof path === 'string') {
+      path = path.split('.');
+    }
+    if (path[0] !== 'database') {
+      path.unshift('database');
+    }
+
+    let result = {};
+
+    let ans = this.localdb.get(path);
+    if (ans !== 'undefined' && typeof ans === 'object') {
+      result = merge(result, ans);
+    }
+
+    ans = this.remotedb.get(path);
+    if (ans !== 'undefined' && typeof ans === 'object') {
+      result = merge(result, ans);
+    }
+
+    // let result = [];
+
+    // let ans = this.localdb.get(path);
+    // if (ans !== 'undefined' && Array.isArray(ans)) {
+    //   result = result.concat(ans);
+    // }
+
+    // ans = this.remotedb.get(path);
+    // if (ans !== 'undefined' && Array.isArray(ans)) {
+    //   result = result.concat(ans);
+    // }
+
+    return {
+      status: true,
+      result: result
+    }
+  }
+
+  /**
+    * Get all keys under an object in dbjson.
+    *
+    * @param {string|array} path
+    *   Path to get to desired data object in dbjson
+    *
+    * @return {object} Return object
+    */
+  getIndex(path) {
+    if (this.username === 'default') {
+      return {
+        status: false,
+        errorMessage: 'Username is not set!'
+      }
+    }
+
+    if (typeof path === 'string') {
+      path = path.split('.');
+    }
+    if (path[0] !== 'database') {
+      path.unshift('database');
+    }
+
+    let result = [];
+
+    let ans = this.localdb.get(path);
+    if (ans !== 'undefined' && typeof ans === 'object') {
+      result = result.concat( Object.keys(ans) );
+    }
+
+    ans = this.remotedb.get(path);
+    if (ans !== 'undefined' && typeof ans === 'object') {
+      result = result.concat( Object.keys(ans) );
+    }
+
+    return {
+      status: true,
+      result: result
+    }
+  }
+
+  /**
+    * Delete object or item. Only can be used on localdb before upload.
+    *
+    * @param {string|array} path
+    *   Path to get to desired data object in dbjson
+    */
+  delete(path) {
+    if (this.username === 'default') {
+      return {
+        status: false,
+        errorMessage: 'Username is not set!'
+      }
+    }
+
+    if (typeof path === 'string') {
+      path = path.split('.');
+    }
+    if (path[0] !== 'database') {
+      path.unshift('database');
+    }
+    this.localdb.unset(path);
+
+    return { status: true };
   }
 
   /**
@@ -101,6 +204,13 @@ class Model {
     * @return {array} - list of commands for gdrive node to process
     */
   getUploadList() {
+    if (this.username === 'default') {
+      return {
+        status: false,
+        errorMessage: 'Username is not set!'
+      }
+    }
+
     Object.entries(this.localdb.get('database')).forEach(([k1, v1]) => {
         if (k1 == 'songs') {
           Object.entries(v1).forEach(([songName, song]) => {
@@ -117,12 +227,104 @@ class Model {
   /**
     * Gets latest timestamp in ms
     */
-  _getTimestamp() {
+  _timestamp() {
     let timestamp = Date.now();
     if (timestamp == this.lastTimestamp) { timestamp += 1; }
     this.lastTimestamp = timestamp;
     return timestamp;
   }
+}
+
+module.exports = { Model };
+
+
+/*******************************************************************************/
+//  getSongs() {
+//    let idList = [];
+//
+//    if ('songs' in this.remotedb.get('database')) {
+//      idList = idList.concat(Object.keys(
+//        this.remotedb.get(`database.songs`)
+//      ));
+//    }
+//    if ('songs' in this.localdb.get('database')) {
+//      idList = idList.concat(Object.keys(
+//        this.localdb.get(`database.songs`)
+//      ));
+//    }
+//
+//    return idList;
+//  }
+//
+//  getSong(songName) {
+//    let song = [];
+//
+//    if ('songs' in this.remotedb.get('database') &&
+//        songName in this.remotedb.get('database.songs')) {
+//      song = song.concat(
+//        this.remotedb.get(`database.songs.${songName}`)
+//      );
+//    }
+//    if ('songs' in this.localdb.get('database') &&
+//        songName in this.localdb.get('database.songs')) {
+//      song = song.concat(
+//        this.localdb.get(`database.songs.${songName}`)
+//      );
+//    }
+//
+//    return song.sort((a,b)=>b.timestamp-a.timestamp);
+//  }
+//
+//  getSongAttr(songName, attr) {
+//    return this.getSong(songName)
+//      .filter(a => {
+//        return a.attr === attr;
+//      });
+//  }
+//
+//  updateSong(songName, attr, value) {
+//    let update = {
+//      attr: attr,
+//      value: value,
+//      editedBy: this.username,
+//      timestamp: this._timestamp()
+//    }
+//
+//    // if song already exists
+//    if ('songs' in this.localdb.get('database') &&
+//        songName in this.localdb.get('database.songs')) {
+//
+//      this.localdb.append(`database.songs.${songName}`, update);
+//    }
+//    // if song doesnt exist
+//    else {
+//      if ( !('songs' in this.localdb.get('database')) ) {
+//        this.localdb.set('database.songs', {});
+//      }
+//      if ( !(songName in this.localdb.get('database.songs')) ) {
+//        this.localdb.set(`database.songs.${songName}`, [update]);
+//      }
+//    }
+//    return true;
+//  }
+//
+//  /**
+//    * Can ONLY be used for the localdb when an error occurs during new song
+//    * creation.
+//    *
+//    * @param {string} songName - The name of the song to remove
+//    *
+//    * @return {bool} a boolean if successful
+//    */
+//  removeSong(songName) {
+//    if ('songs' in this.localdb.get('database') &&
+//        songName in this.localdb.get('database.songs')) {
+//
+//      this.localdb.unset(`database.songs.${songName}`);
+//      return true;
+//    }
+//    return false;
+//  }
 
 /*******************************************************************************/
 //  /**
@@ -353,6 +555,3 @@ class Model {
 //    return idList.sort((a,b)=>b-a);
 //  }
 //  // _getTimestamp() { return Date.now(); }
-}
-
-module.exports = { Model };
