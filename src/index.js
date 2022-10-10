@@ -71,7 +71,6 @@ node
     *   name: 'name of song',
     * }
     *
-    * Returns 'result' as path to local song file
     */
   .addApiCall('newSong', function(packet) {
     if ( !('name' in packet.data) ) {
@@ -92,7 +91,75 @@ node
     path.push('name');
     db.addAttribute(path, packet.data.name);
 
-    packet.data = { status: true };
+    // packet.data = { status: true }; // Client.js auto adds this for return()
+    this.return(packet);
+  })
+
+  /**
+    * Used for duplicating a song
+    *
+    * packet.data = {
+    *   name:    'name of song to duplicate',
+    *   newName: 'new song name',
+    * }
+    *
+    */
+  .addApiCall('duplicateSong', function(packet) {
+    if ( !('name' in packet.data) ) {
+      this.returnError(packet, 'Song name not included!');
+      return;
+    }
+    if ( !('newName' in packet.data) ) {
+      this.returnError(packet, 'Song name not included!');
+      return;
+    }
+
+    let name    = packet.data.name;
+    let newName = packet.data.newName;
+
+    let path = ['songs', name];
+    let ans  = db.getItem(path);
+
+    if (Object.keys(ans.result).length === 0) {
+      this.returnError(packet, 'Song does not exist!');
+      return;
+    }
+
+    // Add entire branch to new song
+    db.localdb.set(['songs', newName], ans.result);
+
+    // Redo the first creation to set first upload as current user
+    db.localdb.unset(['songs', newName, 'name']);
+    db.addAttribute(['songs', newName, 'name'], newName);
+
+    // packet.data = { status: true }; // Client.js auto adds this for return()
+    this.return(packet);
+  })
+
+  /**
+    * Used for removing localdb songs
+    *
+    * packet.data = {
+    *   name:            'name of song',
+    *   attr (optional): 'if you want to remove a specific attribute of a song',
+    * }
+    *
+    */
+  .addApiCall('remove', function(packet) {
+    if ( !('name' in packet.data) ) {
+      this.returnError(packet, 'Song name not included!');
+      return;
+    }
+
+    let path = ['songs', packet.data.name];
+
+    if ('attr' in packet.data) {
+      path.push(packet.data.attr);
+    }
+
+    let ans = db.delete(path);
+    
+    packet.data = ans;
     this.return(packet);
   })
 
@@ -178,7 +245,9 @@ async function onInit() {
 /**
   * Any code that needs to run when the node starts
   */
-async function onConnect() {}
+async function onConnect() {
+  Helpers.log({leader: 'arrow', loud: true}, 'Running!');
+}
 
 
 /**
@@ -206,6 +275,6 @@ function updateSong(data) {
   }
 
   return {
-    data: db.updateSong(data.name, data.attr, data.value)
+    result: db.updateSong(data.name, data.attr, data.value)
   };
 }
