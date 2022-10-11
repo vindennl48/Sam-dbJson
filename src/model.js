@@ -101,12 +101,12 @@ class Model {
     let result = {};
 
     let ans = this.localdb.get(path);
-    if (ans !== 'undefined' && typeof ans === 'object') {
+    if (ans !== undefined && typeof ans === 'object') {
       result = merge(result, ans);
     }
 
     ans = this.remotedb.get(path);
-    if (ans !== 'undefined' && typeof ans === 'object') {
+    if (ans !== undefined && typeof ans === 'object') {
       result = merge(result, ans);
     }
 
@@ -142,12 +142,12 @@ class Model {
     let result = [];
 
     let ans = this.localdb.get(path);
-    if (ans !== 'undefined' && typeof ans === 'object') {
+    if (ans !== undefined && typeof ans === 'object') {
       result = result.concat( Object.keys(ans) );
     }
 
     ans = this.remotedb.get(path);
-    if (ans !== 'undefined' && typeof ans === 'object') {
+    if (ans !== undefined && typeof ans === 'object') {
       result = result.concat( Object.keys(ans) );
     }
 
