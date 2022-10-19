@@ -1,5 +1,6 @@
 const merge            = require('deepmerge');
 const { Helpers }      = require('../../samcore/src/Helpers.js');
+const Packet           = Helpers.Packet;
 const { EditJsonFile } = require('../../samcore/src/EditJsonFile.js');
 
 // Example database:
@@ -46,10 +47,14 @@ class Model {
     */
   addAttribute(path, value) {
     if (this.username === 'default') {
-      return {
-        status: false,
+      return Packet.newMini({
+        status:       false,
         errorMessage: 'Username is not set!'
-      }
+      });
+      // return {
+      //   status: false,
+      //   errorMessage: 'Username is not set!'
+      // }
     }
 
     if (typeof path === 'string') {
@@ -72,7 +77,8 @@ class Model {
       }
     );
 
-    return { status: true };
+    return Packet.newMini({ status: true });
+    // return { status: true };
   }
 
   /**
@@ -85,10 +91,14 @@ class Model {
     */
   getItem(path) {
     if (this.username === 'default') {
-      return {
-        status: false,
+      return Packet.newMini({
+        status:       false,
         errorMessage: 'Username is not set!'
-      }
+      });
+      // return {
+      //   status: false,
+      //   errorMessage: 'Username is not set!'
+      // }
     }
 
     if (typeof path === 'string') {
@@ -110,10 +120,14 @@ class Model {
       result = merge(result, ans);
     }
 
-    return {
+    return Packet.newMini({
       status: true,
       result: result
-    }
+    });
+    // return {
+    //   status: true,
+    //   result: result
+    // }
   }
 
   /**
@@ -126,10 +140,14 @@ class Model {
     */
   getIndex(path) {
     if (this.username === 'default') {
-      return {
-        status: false,
+      return Packet.newMini({
+        status:       false,
         errorMessage: 'Username is not set!'
-      }
+      });
+      // return {
+      //   status: false,
+      //   errorMessage: 'Username is not set!'
+      // }
     }
 
     if (typeof path === 'string') {
@@ -145,16 +163,26 @@ class Model {
     if (ans !== undefined && typeof ans === 'object') {
       result = result.concat( Object.keys(ans) );
     }
+    else if (ans !== undefined && Array.isArray(ans)) {
+      result = result.concat(ans);
+    }
 
     ans = this.remotedb.get(path);
     if (ans !== undefined && typeof ans === 'object') {
       result = result.concat( Object.keys(ans) );
     }
+    else if (ans !== undefined && Array.isArray(ans)) {
+      result = result.concat(ans);
+    }
 
-    return {
+    return Packet.newMini({
       status: true,
       result: result
-    }
+    });
+    // return {
+    //   status: true,
+    //   result: result
+    // }
   }
 
   /**
@@ -165,10 +193,14 @@ class Model {
     */
   delete(path) {
     if (this.username === 'default') {
-      return {
-        status: false,
+      return Packet.newMini({
+        status:       false,
         errorMessage: 'Username is not set!'
-      }
+      });
+      // return {
+      //   status: false,
+      //   errorMessage: 'Username is not set!'
+      // }
     }
 
     if (typeof path === 'string') {
@@ -179,7 +211,8 @@ class Model {
     }
     this.localdb.unset(path);
 
-    return { status: true };
+    return Packet.newMini({ status: true });
+    // return { status: true };
   }
 
   /**
@@ -193,10 +226,14 @@ class Model {
     */
   getUploadList() {
     if (this.username === 'default') {
-      return {
-        status: false,
+      return Packet.newMini({
+        status:       false,
         errorMessage: 'Username is not set!'
-      }
+      });
+      // return {
+      //   status: false,
+      //   errorMessage: 'Username is not set!'
+      // }
     }
 
     Object.entries(this.localdb.get('database')).forEach(([k1, v1]) => {

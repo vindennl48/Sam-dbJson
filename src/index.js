@@ -1,6 +1,7 @@
 const { Model }   = require('./model.js');
 const { Client }  = require('../../samcore/src/Client.js');
 const { Helpers } = require('../../samcore/src/Helpers.js');
+const Packet      = Helpers.Packet;
 
 let db         = new Model('localdb.json', 'remotedb.json');
 let nodeName   = 'dbjson';
@@ -9,157 +10,156 @@ let node       = new Client(nodeName, serverName);
 
 node
   /**
-    * Returns all songs in the system.
-    *
-    * No arguments are required.
-    */
-  .addApiCall('getSongs', function(packet) {
-    packet.data = db.getIndex('songs');
-    this.return(packet);
-  })
-
-  /**
-  * get all data associated with a song
-  *
-  * packet.data = { name: 'name of song' }
+  * packet.args = {
+  *   type: object type, either 'song', 'songs', 'mixer', 'mixers'
+  *   name: 'name of song or mix' (optional)
+  * }
   */
-  .addApiCall('getSong', function(packet) {
-    if ( !('name' in packet.data) ) {
-      this.returnError(packet, 'Song name not in packet!');
-      return;
-    }
+  .addApiCall('get', function(packet) {
+    if (!Packet.checkArgs(this, ['type'], packet)) return;
+    let type = packet.args.type;
 
-    let path    = ['songs', packet.data.name];
-    packet.data = db.getItem(path);
+    if ( ['song','mixer'].includes(type) ) {
+      if (!Packet.checkArgs(this, ['name'], packet)) return;
+      let name = packet.args.name;
+
+      packet = Packet.mergeMini(packet, db.getItem(`${type}s`, name));
+    } else {
+      packet = Packet.mergeMini(packet, db.getIndex(type));
+    }
 
     this.return(packet);
   })
 
   /**
-    * Used for updating an attribute of a song.
-    *
-    * packet.data = {
-    *   name:  'name of song',
-    *   attr:  'attribute name',
-    *   value: 'value of attribute, can be any data type',
-    * }
-    */
-  .addApiCall('updateSong', function(packet) {
-    if ( !('name' in packet.data) ) {
-      this.returnError(packet, 'Song name not included!');
-      return;
-    }
-    if ( !('attr' in packet.data) ) {
-      this.returnError(packet, 'Attribute name not included!');
-      return;
-    }
-    if ( !('value' in packet.data) ) {
-      this.returnError(packet, 'Value name not included!');
-      return;
+  * packet.args = {
+  *   type:  object type, either 'song', 'mixer',
+  *   name:  'name of song or mix',
+  *   attr:  'attribute name to add to',
+  *   ifNew: boolean if you only want to add if the value doesnt already exist
+  *   value: { either string/int/bool or object with all the values you want
+  *            to add },
+  * }
+  */
+  .addApiCall('set', function(packet) {
+    if (!Packet.checkArgs(this, ['type', 'name', 'attr', 'value'], packet)) return;
+    let type  = packet.args.type;
+    let name  = packet.args.name;
+    let attr  = packet.args.attr;
+    let value = packet.args.value;
+    let ifNew = packet.args.ifNew || false;
+    let path  = [`${type}s`, name, attr];
+
+    if (ifNew) {
+      let ans = db.getIndex(path);
+      if (!ans) { ifNew = false; } // failsafe
+      ans = ans.result;
+
+      if ( ans.find(item => item.value === value) === undefined ) {
+        ifNew = false; // if we can not find it, then lets add it!
+      }
     }
 
-    let path    = ['songs', packet.data.name, packet.data.attr];
-    packet.data = db.addAttribute(path, packet.data.value);
+    if (!ifNew) {
+      packet = Packet.mergeMini(packet, db.addAttribute(path, value));
+    }
 
     this.return(packet);
   })
 
   /**
-    * Used for creating a new song
+    * Used for creating a new song or mix
     *
-    * packet.data = {
+    * packet.args = {
+    *   type: object type, either 'song', 'mixer'
     *   name: 'name of song',
     * }
     *
     */
-  .addApiCall('newSong', function(packet) {
-    if ( !('name' in packet.data) ) {
-      this.returnError(packet, 'Song name not included!');
-      return;
-    }
+  .addApiCall('new', function(packet) {
+    if (!Packet.checkArgs(this, ['type', 'name'], packet)) return;
+    let type = packet.args.type;
+    let name = packet.args.name;
+    let path = [`${type}s`, name];
 
-    let path = ['songs', packet.data.name];
-    let ans  = db.getItem(path);
+    let ans = db.getItem(path);
 
     if (Object.keys(ans.result).length !== 0) {
-      this.returnError(packet, 'Song already exists!');
+      this.returnError(packet, `${type} already exists!`);
       return;
     }
 
     // To add a song, we can just add a 'name' attribute to a new song.  This
     // gives us data on who created the song and when.
     path.push('name');
-    db.addAttribute(path, packet.data.name);
+    db.addAttribute(path, name);
 
     // packet.data = { status: true }; // Client.js auto adds this for return()
     this.return(packet);
   })
 
   /**
-    * Used for duplicating a song
+    * Used for duplicating a song or mix
     *
-    * packet.data = {
-    *   name:    'name of song to duplicate',
-    *   newName: 'new song name',
+    * packet.args = {
+    *   type:    object type, either 'song', 'mixer'
+    *   name:    'name of song or mix to duplicate',
+    *   newName: 'new song or mix name',
     * }
     *
     */
-  .addApiCall('duplicateSong', function(packet) {
-    if ( !('name' in packet.data) ) {
-      this.returnError(packet, 'Song name not included!');
-      return;
-    }
-    if ( !('newName' in packet.data) ) {
-      this.returnError(packet, 'Song name not included!');
-      return;
-    }
+  .addApiCall('duplicate', function(packet) {
+    if (!Packet.checkArgs(this, ['type', 'name', 'newName'], packet)) return;
 
-    let name    = packet.data.name;
-    let newName = packet.data.newName;
-
-    let path = ['songs', name];
-    let ans  = db.getItem(path);
+    let type    = packet.args.type;
+    let name    = packet.args.name;
+    let newName = packet.args.newName;
+    let ans     = db.getItem([`${type}s`, name]);
 
     if (Object.keys(ans.result).length === 0) {
       this.returnError(packet, 'Song does not exist!');
       return;
     }
 
+    let path = [`${type}s`, newName];
+
     // Add entire branch to new song
-    db.localdb.set(['songs', newName], ans.result);
+    db.localdb.set(path, ans.result);
+
+    path.push('name');
 
     // Redo the first creation to set first upload as current user
-    db.localdb.unset(['songs', newName, 'name']);
-    db.addAttribute(['songs', newName, 'name'], newName);
+    db.localdb.unset(path);
+    db.addAttribute(path, newName);
 
     // packet.data = { status: true }; // Client.js auto adds this for return()
     this.return(packet);
   })
 
   /**
-    * Used for removing localdb songs
+    * Used for removing local songs and mixes. Can only remove local non-pushed
+    * items.
     *
-    * packet.data = {
-    *   name:            'name of song',
-    *   attr (optional): 'if you want to remove a specific attribute of a song',
+    * packet.args = {
+    *   type:            object type, either 'song', 'mixer',
+    *   name:            'name of song or mix',
+    *   attr (optional): 'if you want to remove a specific attribute of a song
+    *                    or mix'
     * }
     *
     */
   .addApiCall('remove', function(packet) {
-    if ( !('name' in packet.data) ) {
-      this.returnError(packet, 'Song name not included!');
-      return;
+    if (!Packet.checkArgs(this, ['type', 'name'], packet)) return;
+    let type = packet.args.type;
+    let name = packet.args.name;
+    let path = [`${type}s`, name];
+
+    if ('attr' in packet.args) {
+      path.push(packet.args.attr);
     }
 
-    let path = ['songs', packet.data.name];
-
-    if ('attr' in packet.data) {
-      path.push(packet.data.attr);
-    }
-
-    let ans = db.delete(path);
+    packet = Packet.mergeMini(packet, db.delete(path));
     
-    packet.data = ans;
     this.return(packet);
   })
 
@@ -221,23 +221,23 @@ node
 async function onInit() {
   // load username from samcore
   let packet = await this.callApi(serverName, 'getUsername');
-  if (packet.data.status) {
-    db.username = packet.data.result;
+  if (packet.status) {
+    db.username = packet.result;
   } else {
     Helpers.log({leader: 'error', loud: false},
       'Error: ',
-      packet.data.errorMessage
+      packet.errorMessage
     );
   }
 
   // Load settings from samcore
   packet = await this.callApi(serverName, 'getSettings');
-  if (packet.data.status) {
-    db.settings = packet.data.result;
+  if (packet.status) {
+    db.settings = packet.result;
   } else {
     Helpers.log({leader: 'error', loud: false},
       'Error: ',
-      packet.data.errorMessage
+      packet.errorMessage
     );
   }
 }
